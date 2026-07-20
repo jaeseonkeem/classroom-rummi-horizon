@@ -103,7 +103,18 @@
 
     <div id="toast" class="toast-message">알림 메시지</div>
 
-    <div id="loginModal" class="modal-overlay">
+    <!-- 세션 복구(이어하기) 모달 -->
+    <div id="reconnectModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box">
+            <h3>⏳ 이전 플레이 감지됨</h3>
+            <p id="reconnectDesc" style="font-size: 13px; color: #dcddde; line-height: 1.5;"></p>
+            <button class="green-btn" style="width: 100%; margin-bottom: 8px; padding:10px;" onclick="chooseReconnect(true)">이어하기</button>
+            <button style="width: 100%; background: #e74c3c; padding:10px;" onclick="chooseReconnect(false)">새로 접속하기</button>
+        </div>
+    </div>
+
+    <!-- 로그인 모달 -->
+    <div id="loginModal" class="modal-overlay" style="display: none;">
         <div class="modal-box">
             <h3 style="margin-top:0;">🧩 루미큐브 Pro 입장</h3>
             <input type="text" id="inputName" class="form-input" placeholder="이름을 입력하세요">
@@ -112,6 +123,7 @@
         </div>
     </div>
 
+    <!-- 대기실 모달 -->
     <div id="waitingScreen" class="modal-overlay" style="display:none;">
         <div class="modal-box">
             <h3>⏳ <span id="waitRoomTitle"></span> 대기실</h3>
@@ -158,6 +170,31 @@
         const GRID_ROWS = 8;
         const GRID_COLS = 18;
 
+        // 접속 시 이어하기 감지 로직 복원
+        window.onload = function() {
+            const savedName = sessionStorage.getItem('rummi_name');
+            const savedRoom = sessionStorage.getItem('rummi_room');
+
+            if (savedName && savedRoom) {
+                document.getElementById('reconnectDesc').innerText = `이전 플레이 정보가 존재합니다.\n[${savedRoom}모둠 - ${savedName}]님으로 복귀할까요?`;
+                document.getElementById('reconnectModal').style.display = 'flex';
+            } else {
+                document.getElementById('loginModal').style.display = 'flex';
+            }
+        };
+
+        function chooseReconnect(agree) {
+            document.getElementById('reconnectModal').style.display = 'none';
+            if (agree) {
+                userName = sessionStorage.getItem('rummi_name');
+                userRoom = sessionStorage.getItem('rummi_room');
+                connectToGame(userName, userRoom);
+            } else {
+                sessionStorage.clear();
+                document.getElementById('loginModal').style.display = 'flex';
+            }
+        }
+
         function submitLogin() {
             userName = document.getElementById('inputName').value.trim();
             userRoom = parseInt(document.getElementById('inputRoom').value.trim()) || 1;
@@ -167,10 +204,13 @@
             sessionStorage.setItem('rummi_name', userName);
             sessionStorage.setItem('rummi_room', userRoom);
             document.getElementById('loginModal').style.display = 'none';
+            connectToGame(userName, userRoom);
+        }
 
-            document.getElementById('roomTitle').innerText = `${userRoom}모둠`;
-            document.getElementById('waitRoomTitle').innerText = `${userRoom}모둠`;
-            socket.emit('joinGame', { name: userName, roomId: userRoom });
+        function connectToGame(name, room) {
+            document.getElementById('roomTitle').innerText = `${room}모둠`;
+            document.getElementById('waitRoomTitle').innerText = `${room}모둠`;
+            socket.emit('joinGame', { name: name, roomId: room });
         }
 
         function showToast(msg) {
@@ -210,7 +250,6 @@
                 }
             }
 
-            // 플레이어 리스트 갱신 (등록/미등록 상태 복원)
             const playerBoard = document.getElementById('playerBoard');
             playerBoard.innerHTML = '';
             gameState.players.forEach(p => {
