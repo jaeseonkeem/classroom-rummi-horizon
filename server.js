@@ -38,11 +38,8 @@ function createNewRoomState() {
     };
 }
 
-// 2D 격자판에서 가로/세로로 연속 연결된 타일 묶음(세트)들을 추출하는 스마트 알고리즘
 function parseGroupsFromGrid(grid) {
     let groups = [];
-
-    // 가로 줄 검사
     for (let r = 0; r < GRID_ROWS; r++) {
         let currentGroup = [];
         for (let c = 0; c < GRID_COLS; c++) {
@@ -56,12 +53,9 @@ function parseGroupsFromGrid(grid) {
                 }
             }
         }
-        if (currentGroup.length > 0) {
-            groups.push(currentGroup);
-        }
+        if (currentGroup.length > 0) groups.push(currentGroup);
     }
 
-    // 세로 줄 검사
     for (let c = 0; c < GRID_COLS; c++) {
         let currentGroup = [];
         for (let r = 0; r < GRID_ROWS; r++) {
@@ -75,12 +69,8 @@ function parseGroupsFromGrid(grid) {
                 }
             }
         }
-        if (currentGroup.length > 0) {
-            groups.push(currentGroup);
-        }
+        if (currentGroup.length > 0) groups.push(currentGroup);
     }
-
-    // 1장짜리 독립 타일은 세트 검증에서 제외 (단, 2장 이하 단독 존재 시 전체 보드 유효성 실패 처리)
     return groups;
 }
 
@@ -89,7 +79,7 @@ function isBoardValid(grid) {
     if (groups.length === 0) return true;
 
     for (let group of groups) {
-        if (group.length < 3) return false; // 3장 미만 그룹은 무조건 실패
+        if (group.length < 3) return false;
         if (!validateGroup(group) && !validateRun(group)) return false;
     }
     return true;
@@ -121,15 +111,11 @@ function validateRun(tiles) {
 function checkRunWithJokers(arr) {
     let jokersCount = arr.filter(v => v === 'J').length;
     let nums = arr.filter(v => v !== 'J').sort((a, b) => a - b);
-    
-    // 연속 숫자에 중복값이 있으면 안됨
     for(let i = 0; i < nums.length - 1; i++) {
         if(nums[i] === nums[i+1]) return false;
     }
-    
     let diff = nums[nums.length - 1] - nums[0];
     let neededJokers = diff - (nums.length - 1);
-    
     if (neededJokers <= jokersCount) {
         let totalLength = nums.length + jokersCount;
         if (totalLength <= 13) return true;
@@ -159,7 +145,14 @@ io.on('connection', (socket) => {
                 socket.emit('errorMsg', '방에 입장할 수 없습니다.');
                 return;
             }
-            gameState.players.push({ id: socket.id, name: name, hand: [], isMeldDone: false, turnSubmittedTiles: [] });
+            gameState.players.push({ 
+                id: socket.id, 
+                name: name, 
+                hand: [], 
+                isMeldDone: false, 
+                turnSubmittedTiles: [],
+                backupHand: null // 이번 턴 시작 시 손패 백업용
+            });
         }
 
         io.to(roomName).emit('updateGame', gameState);
@@ -183,6 +176,7 @@ io.on('connection', (socket) => {
                 for (let i = 0; i < 14; i++) {
                     if (gameState.tilePool.length > 0) player.hand.push(gameState.tilePool.pop());
                 }
+                player.backupHand = JSON.stringify(player.hand);
             });
             io.to(myRoom).emit('updateGame', gameState);
         }
@@ -194,17 +188,19 @@ io.on('connection', (socket) => {
         let currentPlayer = gameState.players[gameState.currentTurn];
         if (!currentPlayer || currentPlayer.id !== socket.id) return;
 
+        // 제출했던 타일 취소 및 뽑기 수행
         if (gameState.backupGrid) gameState.grid = JSON.parse(gameState.backupGrid);
-        if (currentPlayer.turnSubmittedTiles.length > 0) {
-            currentPlayer.turnSubmittedTiles.forEach(tile => {
-                if(!currentPlayer.hand.some(t => t.id === tile.id)) currentPlayer.hand.push(tile);
-            });
-            currentPlayer.turnSubmittedTiles = [];
-        }
+        if (currentPlayer.backupHand) currentPlayer.hand = JSON.parse(currentPlayer.backupHand);
+        currentPlayer.turnSubmittedTiles = [];
 
         if (gameState.tilePool.length > 0) currentPlayer.hand.push(gameState.tilePool.pop());
+        
+        // 다음 턴 준비 백업
         gameState.backupGrid = JSON.stringify(gameState.grid);
         gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
+        let nextPlayer = gameState.players[gameState.currentTurn];
+        if (nextPlayer) nextPlayer.backupHand = JSON.stringify(nextPlayer.hand);
+
         io.to(myRoom).emit('updateGame', gameState);
     });
 
@@ -217,18 +213,16 @@ io.on('connection', (socket) => {
         let targetTile = null;
         let isComingFromHand = false;
 
-        // 1. 손패에서 꺼내는 경우
         let handIdx = currentPlayer.hand.findIndex(t => t.id === tileId);
         if (handIdx !== -1) {
             targetTile = currentPlayer.hand.splice(handIdx, 1)[0];
             isComingFromHand = true;
         } else {
-            // 2. 격자판 내부에서 타일을 이동시키는 경우
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
                     if (gameState.grid[r][c] && gameState.grid[r][c].id === tileId) {
                         targetTile = gameState.grid[r][c];
-                        gameState.grid[r][c] = null; // 기존 위치 비우기
+                        gameState.grid[r][c] = null;
                         break;
                     }
                 }
@@ -249,6 +243,20 @@ io.on('connection', (socket) => {
         io.to(myRoom).emit('updateGame', gameState);
     });
 
+    // 턴 진행 중 언제든지 마음이 바뀌었을 때 회수/초기화하는 이벤트
+    socket.on('revertTurn', () => {
+        if (!myRoom || !rooms[myRoom]) return;
+        let gameState = rooms[myRoom];
+        let currentPlayer = gameState.players[gameState.currentTurn];
+        if (!currentPlayer || currentPlayer.id !== socket.id) return;
+
+        if (gameState.backupGrid) gameState.grid = JSON.parse(gameState.backupGrid);
+        if (currentPlayer.backupHand) currentPlayer.hand = JSON.parse(currentPlayer.backupHand);
+        currentPlayer.turnSubmittedTiles = [];
+
+        io.to(myRoom).emit('updateGame', gameState);
+    });
+
     socket.on('endTurn', () => {
         if (!myRoom || !rooms[myRoom]) return;
         let gameState = rooms[myRoom];
@@ -261,11 +269,9 @@ io.on('connection', (socket) => {
         }
 
         if (!isBoardValid(gameState.grid)) {
-            socket.emit('errorMsg', '❌ 규칙에 맞지 않는 세트(2장 이하이거나 조합 오류)가 존재합니다! 행동이 롤백됩니다.');
-            gameState.grid = JSON.parse(gameState.backupGrid);
-            currentPlayer.turnSubmittedTiles.forEach(tile => {
-                if(!currentPlayer.hand.some(t => t.id === tile.id)) currentPlayer.hand.push(tile);
-            });
+            socket.emit('errorMsg', '❌ 규칙에 맞지 않는 세트가 존재합니다! 행동이 원상복구됩니다.');
+            if (gameState.backupGrid) gameState.grid = JSON.parse(gameState.backupGrid);
+            if (currentPlayer.backupHand) currentPlayer.hand = JSON.parse(currentPlayer.backupHand);
             currentPlayer.turnSubmittedTiles = [];
             io.to(myRoom).emit('updateGame', gameState);
             return;
@@ -276,10 +282,8 @@ io.on('connection', (socket) => {
             currentPlayer.turnSubmittedTiles.forEach(t => { scoreSum += t.isJoker ? 10 : t.number; });
             if (scoreSum < 30) {
                 socket.emit('errorMsg', `첫 등록의 총합이 30점 미만입니다. (${scoreSum}점)`);
-                gameState.grid = JSON.parse(gameState.backupGrid);
-                currentPlayer.turnSubmittedTiles.forEach(tile => {
-                    if(!currentPlayer.hand.some(t => t.id === tile.id)) currentPlayer.hand.push(tile);
-                });
+                if (gameState.backupGrid) gameState.grid = JSON.parse(gameState.backupGrid);
+                if (currentPlayer.backupHand) currentPlayer.hand = JSON.parse(currentPlayer.backupHand);
                 currentPlayer.turnSubmittedTiles = [];
                 io.to(myRoom).emit('updateGame', gameState);
                 return;
@@ -290,7 +294,7 @@ io.on('connection', (socket) => {
 
         gameState.backupGrid = JSON.stringify(gameState.grid);
         currentPlayer.turnSubmittedTiles = [];
-        
+
         if (currentPlayer.hand.length === 0) {
             gameState.status = 'waiting';
             io.to(myRoom).emit('victory', currentPlayer.name);
@@ -299,6 +303,9 @@ io.on('connection', (socket) => {
         }
 
         gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
+        let nextPlayer = gameState.players[gameState.currentTurn];
+        if (nextPlayer) nextPlayer.backupHand = JSON.stringify(nextPlayer.hand);
+
         io.to(myRoom).emit('updateGame', gameState);
     });
 

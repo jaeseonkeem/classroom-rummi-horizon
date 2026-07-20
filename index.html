@@ -14,7 +14,6 @@
             display: flex; flex-direction: column; height: 100vh; height: 100dvh; 
         }
         
-        /* 상단 컨트롤 바 (1열 레이아웃) */
         .top-navbar {
             background: #1e2124; height: 50px; padding: 0 15px;
             display: flex; align-items: center; justify-content: space-between;
@@ -26,8 +25,11 @@
         .turn-info { font-size: 13px; font-weight: bold; color: #2ecc71; margin-left: 10px; }
 
         .players-strip { display: flex; gap: 8px; font-size: 11px; }
-        .p-pill { background: #2c2f33; padding: 3px 8px; border-radius: 12px; border: 1px solid #4f545c; }
+        .p-pill { background: #2c2f33; padding: 3px 8px; border-radius: 12px; border: 1px solid #4f545c; display: flex; align-items: center; gap: 4px; }
         .p-pill.active { border-color: #2ecc71; background: #1e3a29; }
+        .meld-tag { font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: bold; }
+        .meld-true { background: #3498db; color: white; }
+        .meld-false { background: #e74c3c; color: white; }
 
         .nav-controls { display: flex; gap: 6px; }
         button {
@@ -37,12 +39,12 @@
         button:disabled { background: #4f545c !important; cursor: not-allowed; opacity: 0.5; }
         button.green-btn { background: #43b581; }
         button.orange-btn { background: #e67e22; }
+        button.gray-btn { background: #747f8d; }
 
-        /* 중앙 2D 격자 공용 보드판 */
         .board-viewport {
             flex: 1; min-height: 0; background: #2f3136; overflow: auto; position: relative;
             background-image: radial-gradient(#4f545c 1px, transparent 0);
-            background-size: 40px 52px; /* 타일 그리드 비율과 완벽 동기화 */
+            background-size: 40px 52px;
         }
         
         .grid-container {
@@ -59,7 +61,6 @@
         }
         .grid-cell.highlight { border-color: #3498db; background: rgba(52, 152, 219, 0.15); }
 
-        /* 하단 손패 고정 영역 */
         .bottom-hand-bar {
             background: #1e2124; height: 85px; border-top: 2px solid #2c2f33;
             padding: 6px 15px calc(6px + env(safe-area-inset-bottom)) 15px;
@@ -71,7 +72,6 @@
         }
         .hand-scroll-area.highlight { border-color: #2ecc71; background: rgba(46, 204, 113, 0.15); }
 
-        /* 타일 스타일 (크기 정규화 적용) */
         .tile { 
             width: 34px; height: 46px; background: #f5f6fa; border-radius: 4px; display: flex; 
             justify-content: center; align-items: center; font-size: 15px; font-weight: bold; color: black; 
@@ -80,11 +80,8 @@
         }
         .tile.selected { box-shadow: 0 0 0 2px #2ecc71; transform: scale(1.05); }
         .red { color: #e74c3c; } .blue { color: #3498db; } .yellow { color: #f39c12; } .black { color: #2c3e50; }
-        
-        /* 조커 타일 크기 이탈 버그 수정 (동일 박스 크기 준수) */
         .joker { color: #8e44ad; background: #f1f2f6; outline: 2px solid #8e44ad; outline-offset: -2px; } 
 
-        /* 팝업 모달창 및 토스트 */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8);
             display: flex; justify-content: center; align-items: center; z-index: 5000;
@@ -106,7 +103,6 @@
 
     <div id="toast" class="toast-message">알림 메시지</div>
 
-    <!-- 로그인 모달 -->
     <div id="loginModal" class="modal-overlay">
         <div class="modal-box">
             <h3 style="margin-top:0;">🧩 루미큐브 Pro 입장</h3>
@@ -116,7 +112,6 @@
         </div>
     </div>
 
-    <!-- 대기실 모달 -->
     <div id="waitingScreen" class="modal-overlay" style="display:none;">
         <div class="modal-box">
             <h3>⏳ <span id="waitRoomTitle"></span> 대기실</h3>
@@ -125,7 +120,6 @@
         </div>
     </div>
 
-    <!-- 상단 일렬 컨트롤 패널 -->
     <div class="top-navbar">
         <div class="nav-left">
             <span class="logo-title">🧩 루미큐브</span>
@@ -137,18 +131,17 @@
 
         <div class="nav-controls">
             <button id="drawBtn" class="orange-btn" onclick="socket.emit('drawTile')">타일 1장 뽑기</button>
+            <button id="revertBtn" class="gray-btn" onclick="socket.emit('revertTurn')">↩ 이동 취소</button>
             <button onclick="sortHand('number')">숫자정렬</button>
             <button onclick="sortHand('color')">색상정렬</button>
             <button id="endTurnBtn" class="green-btn" onclick="socket.emit('endTurn')">턴 마치기</button>
         </div>
     </div>
 
-    <!-- 2D 격자 공용 보드판 -->
     <div class="board-viewport">
         <div id="gridContainer" class="grid-container"></div>
     </div>
 
-    <!-- 하단 고정 손패 패널 -->
     <div class="bottom-hand-bar">
         <div id="hand" class="hand-scroll-area" ondragover="allowDrop(event)" ondrop="dropToHand(event)"></div>
     </div>
@@ -217,17 +210,19 @@
                 }
             }
 
-            // 플레이어 리스트 갱신
+            // 플레이어 리스트 갱신 (등록/미등록 상태 복원)
             const playerBoard = document.getElementById('playerBoard');
             playerBoard.innerHTML = '';
             gameState.players.forEach(p => {
                 const pill = document.createElement('div');
                 pill.className = `p-pill ${currentTurnPlayer && currentTurnPlayer.name === p.name ? 'active' : ''}`;
-                pill.innerText = `${p.name}: ${p.hand.length}장`;
+                const meldBadge = p.isMeldDone 
+                    ? '<span class="meld-tag meld-true">등록</span>' 
+                    : '<span class="meld-tag meld-false">미등록</span>';
+                pill.innerHTML = `<span>${p.name}: ${p.hand.length}장</span> ${meldBadge}`;
                 playerBoard.appendChild(pill);
             });
 
-            // 2D 격자판 그리기
             renderGrid(gameState.grid);
 
             if (me) {
@@ -249,7 +244,6 @@
                     cell.addEventListener('dragover', allowDrop);
                     cell.addEventListener('drop', (e) => dropToGrid(e, r, c));
 
-                    // 클릭-투-무브 배치 연동
                     cell.addEventListener('click', () => {
                         if (selectedTileId && isMyTurn) {
                             socket.emit('moveTile', { tileId: selectedTileId, toZone: 'grid', row: r, col: c });
@@ -265,7 +259,6 @@
             }
         }
 
-        // 손패 영역 터치/클릭 시 제출했던 카드 손패로 회수 연동
         document.getElementById('hand').addEventListener('click', () => {
             if (selectedTileId && isMyTurn) {
                 socket.emit('moveTile', { tileId: selectedTileId, toZone: 'hand' });
@@ -316,6 +309,7 @@
 
         function toggleControls(disable) {
             document.getElementById('drawBtn').disabled = disable;
+            document.getElementById('revertBtn').disabled = disable;
             document.getElementById('endTurnBtn').disabled = disable;
         }
 
@@ -382,14 +376,12 @@
 
                 const x = touch.clientX; const y = touch.clientY;
 
-                // 손패 영역으로 드래그 시 회수
                 const handRect = document.getElementById('hand').getBoundingClientRect();
                 if (x >= handRect.left && x <= handRect.right && y >= handRect.top && y <= handRect.bottom) {
                     socket.emit('moveTile', { tileId: tileEl.id, toZone: 'hand' });
                     return;
                 }
 
-                // 격자 셀 드롭
                 const cells = document.querySelectorAll('.grid-cell');
                 for (let cell of cells) {
                     const rect = cell.getBoundingClientRect();
