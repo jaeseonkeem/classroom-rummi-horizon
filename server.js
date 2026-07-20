@@ -38,8 +38,11 @@ function createNewRoomState() {
     };
 }
 
+// 2D 격자판에서 가로로 연속 연결된 타일 묶음(세트)만 추출하도록 수정
 function parseGroupsFromGrid(grid) {
     let groups = [];
+
+    // 가로 줄만 검사 (세로 방향 스캔 제거)
     for (let r = 0; r < GRID_ROWS; r++) {
         let currentGroup = [];
         for (let c = 0; c < GRID_COLS; c++) {
@@ -53,24 +56,11 @@ function parseGroupsFromGrid(grid) {
                 }
             }
         }
-        if (currentGroup.length > 0) groups.push(currentGroup);
+        if (currentGroup.length > 0) {
+            groups.push(currentGroup);
+        }
     }
 
-    for (let c = 0; c < GRID_COLS; c++) {
-        let currentGroup = [];
-        for (let r = 0; r < GRID_ROWS; r++) {
-            let cell = grid[r][c];
-            if (cell) {
-                currentGroup.push(cell);
-            } else {
-                if (currentGroup.length > 0) {
-                    groups.push(currentGroup);
-                    currentGroup = [];
-                }
-            }
-        }
-        if (currentGroup.length > 0) groups.push(currentGroup);
-    }
     return groups;
 }
 
