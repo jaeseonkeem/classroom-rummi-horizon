@@ -41,16 +41,19 @@
         button.orange-btn { background: #e67e22; }
         button.gray-btn { background: #747f8d; }
 
+        /* grid-template-columns를 26으로 변경하고 화면 중앙 정렬 추가 */
         .board-viewport {
             flex: 1; min-height: 0; background: #2f3136; overflow: auto; position: relative;
             background-image: radial-gradient(#4f545c 1px, transparent 0);
             background-size: 40px 52px;
+            display: flex; justify-content: center; /* PC 큰 화면에서 중앙 정렬 */
+            padding: 15px;
         }
-        
+
         .grid-container {
             display: grid;
             grid-template-rows: repeat(8, 52px);
-            grid-template-columns: repeat(18, 40px);
+            grid-template-columns: repeat(26, 40px); /* 18에서 26열로 확대 */
             gap: 4px; padding: 10px; width: max-content; height: max-content;
         }
 
@@ -168,7 +171,7 @@
         let selectedTileId = null;
 
         const GRID_ROWS = 8;
-        const GRID_COLS = 18;
+        const GRID_COLS = 26;
 
         // 접속 시 이어하기 감지 로직 복원
         window.onload = function() {

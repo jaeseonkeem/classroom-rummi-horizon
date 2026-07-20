@@ -9,7 +9,7 @@ app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); }
 
 let rooms = {};
 const GRID_ROWS = 8;
-const GRID_COLS = 18;
+const GRID_COLS = 26;
 
 function initDeck() {
     const colors = ['red', 'blue', 'yellow', 'black'];
