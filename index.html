@@ -41,13 +41,16 @@
         button.orange-btn { background: #e67e22; }
         button.gray-btn { background: #747f8d; }
 
-        /* grid-template-columns를 26으로 변경하고 화면 중앙 정렬 추가 */
+        /* 터치 스크롤 및 터치 동작 허용 처리 */
         .board-viewport {
-            flex: 1; min-height: 0; background: #2f3136; overflow: auto; position: relative;
+            flex: 1; min-height: 0; background: #2f3136; position: relative;
             background-image: radial-gradient(#4f545c 1px, transparent 0);
             background-size: 40px 52px;
-            display: flex; justify-content: center; /* PC 큰 화면에서 중앙 정렬 */
             padding: 15px;
+            overflow-x: auto; /* 가로 스크롤 보장 */
+            overflow-y: auto; /* 세로 스크롤 보장 */
+            -webkit-overflow-scrolling: touch; /* iOS 터치 스크롤 부드럽게 */
+            touch-action: pan-x pan-y; /* 스마트폰 손가락 가로/세로 스크롤 터치 허용 */
         }
 
         .grid-container {
@@ -390,17 +393,21 @@
             tileEl.addEventListener('touchstart', (e) => {
                 if (!isMyTurn) return;
                 const touch = e.touches[0];
-                startX = touch.clientX; startY = touch.clientY;
+                startX = touch.clientX; 
+                startY = touch.clientY;
                 hasMoved = false;
             }, { passive: true });
 
             tileEl.addEventListener('touchmove', (e) => {
                 if (!isMyTurn) return;
                 const touch = e.touches[0];
-                const dx = touch.clientX - startX; const dy = touch.clientY - startY;
-                if (Math.hypot(dx, dy) > 6) {
+                const dx = touch.clientX - startX; 
+                const dy = touch.clientY - startY;
+
+                // 10px 이상 끌었을 때만 타일 이동으로 인지하여 잦은 삐끗함/스크롤 방해 최소화
+                if (Math.hypot(dx, dy) > 10) {
                     hasMoved = true;
-                    if (e.cancelable) e.preventDefault();
+                    if (e.cancelable) e.preventDefault(); // 타일 드래그 중에만 브라우저 스크롤 차단
                 }
                 tileEl.style.transform = `translate(${dx}px, ${dy}px)`;
             }, { passive: false });
@@ -410,25 +417,34 @@
                 const touch = e.changedTouches[0];
                 tileEl.style.transform = '';
 
+                // 단순 탭(클릭)인 경우 타일 선택
                 if (!hasMoved) {
                     e.preventDefault();
                     handleTileSelection(tileEl.id);
                     return;
                 }
 
-                const x = touch.clientX; const y = touch.clientY;
+                const x = touch.clientX; 
+                const y = touch.clientY;
 
+                // 손패 영역 감지
                 const handRect = document.getElementById('hand').getBoundingClientRect();
                 if (x >= handRect.left && x <= handRect.right && y >= handRect.top && y <= handRect.bottom) {
                     socket.emit('moveTile', { tileId: tileEl.id, toZone: 'hand' });
                     return;
                 }
 
+                // 격자 셀 감지
                 const cells = document.querySelectorAll('.grid-cell');
                 for (let cell of cells) {
                     const rect = cell.getBoundingClientRect();
                     if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                        socket.emit('moveTile', { tileId: tileEl.id, toZone: 'grid', row: parseInt(cell.dataset.row), col: parseInt(cell.dataset.col) });
+                        socket.emit('moveTile', { 
+                            tileId: tileEl.id, 
+                            toZone: 'grid', 
+                            row: parseInt(cell.dataset.row), 
+                            col: parseInt(cell.dataset.col) 
+                        });
                         break;
                     }
                 }
