@@ -2,160 +2,102 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none">
-    <title>실시간 분반 루미큐브 Pro (가로모드 그리드형)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>실시간 교실 루미큐브 Pro (가로 격자 모드)</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
+        * { box-sizing: border-box; }
         body { 
-            font-family: sans-serif; background: #1c1c1c; color: white; margin: 0; padding: 0;
-            overflow: hidden; touch-action: manipulation;
-            display: flex; flex-direction: column; 
-            height: 100vh;
-            height: 100dvh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #23272a; color: white; margin: 0; padding: 0;
+            overflow: hidden; touch-action: manipulation; user-select: none;
+            display: flex; flex-direction: column; height: 100vh; height: 100dvh; 
         }
         
-        /* [가로모드] 상단 일렬 컨트롤 고정 영역 (5.png 스타일) */
-        .header-panel {
-            background: #111; padding: 8px 15px; flex-shrink: 0; box-shadow: 0 4px 6px rgba(0,0,0,0.4);
-            z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        /* 상단 컨트롤 바 (1열 레이아웃) */
+        .top-navbar {
+            background: #1e2124; height: 50px; padding: 0 15px;
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 2px solid #2c2f33; flex-shrink: 0; z-index: 100;
         }
-        
-        .header-left { display: flex; align-items: center; gap: 8px; }
-        .header-center { font-size: 15px; color: #2ecc71; font-weight: bold; text-align: center; flex-grow: 1; }
-        .header-right { display: flex; align-items: center; gap: 5px; }
+        .nav-left { display: flex; align-items: center; gap: 10px; }
+        .logo-title { font-size: 16px; font-weight: bold; margin: 0; color: #ffffff; }
+        .room-badge { background: #e74c3c; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .turn-info { font-size: 13px; font-weight: bold; color: #2ecc71; margin-left: 10px; }
 
-        h1 { font-size: 16px; margin: 0; display: inline-block; }
-        .room-tag { background: #e74c3c; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-        
-        /* 플레이어 현황판 */
-        .player-status-board {
-            background: #252525; padding: 4px; border-radius: 6px;
-            display: flex; gap: 8px; font-size: 11px; border: 1px solid #444;
-        }
-        .player-card { padding: 2px 6px; border-radius: 4px; background: #1a252f; }
-        .player-card.active-turn { border: 1.5px solid #2ecc71; background: #16a085; }
-        .tile-count { font-weight: bold; color: #f1c40f; }
-        .meld-tag { font-size: 9px; padding: 1px 3px; border-radius: 3px; margin-left: 3px; font-weight: bold;}
-        .meld-true { background: #3498db; color: white; }
-        .meld-false { background: #e74c3c; color: white; }
+        .players-strip { display: flex; gap: 8px; font-size: 11px; }
+        .p-pill { background: #2c2f33; padding: 3px 8px; border-radius: 12px; border: 1px solid #4f545c; }
+        .p-pill.active { border-color: #2ecc71; background: #1e3a29; }
 
+        .nav-controls { display: flex; gap: 6px; }
         button {
-            padding: 6px 12px; font-size: 12px; font-weight: bold; background: #e67e22; border: none; color: white; border-radius: 5px; cursor: pointer;
+            padding: 6px 10px; font-size: 12px; font-weight: bold; background: #7289da; 
+            border: none; color: white; border-radius: 4px; cursor: pointer; transition: 0.1s;
         }
-        button:disabled { background: #555 !important; cursor: not-allowed; opacity: 0.5; }
-        button.blue-btn { background: #3498db; }
-        button.green-btn { background: #2ecc71; }
-        
-        /* [가로모드] 공용 보드가 넓은 드롭 격자판 공간으로 변형 */
-        .board-container {
-            background-color: #242424; 
-            /* 가이드라인 이미지 5.png와 완벽 동기화되는 도트 매트릭스 그리드 */
-            background-image: radial-gradient(rgba(255,255,255,0.08) 1.5px, transparent 0); 
-            background-size: 44px 56px; 
-            margin: 0; padding: 0;
-            flex: 1; 
-            min-height: 0; 
-            overflow: auto; 
-            position: relative;
-            box-sizing: border-box;
+        button:disabled { background: #4f545c !important; cursor: not-allowed; opacity: 0.5; }
+        button.green-btn { background: #43b581; }
+        button.orange-btn { background: #e67e22; }
+
+        /* 중앙 2D 격자 공용 보드판 */
+        .board-viewport {
+            flex: 1; min-height: 0; background: #2f3136; overflow: auto; position: relative;
+            background-image: radial-gradient(#4f545c 1px, transparent 0);
+            background-size: 40px 52px; /* 타일 그리드 비율과 완벽 동기화 */
         }
         
-        /* 20열 8행 크기의 가상의 타일 그리드 맵 */
-        .board-grid-wrapper {
-            position: absolute;
-            width: 880px;  /* 20열 * 44px */
-            height: 448px; /* 8행 * 56px */
-            top: 10px;
-            left: 10px;
+        .grid-container {
+            display: grid;
+            grid-template-rows: repeat(8, 52px);
+            grid-template-columns: repeat(18, 40px);
+            gap: 4px; padding: 10px; width: max-content; height: max-content;
         }
 
-        /* 격자의 각 배치 셀 정의 */
         .grid-cell {
-            position: absolute;
-            width: 44px;
-            height: 56px;
-            box-sizing: border-box;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .grid-cell.highlight-dest {
-            background: rgba(52, 152, 219, 0.15);
-            border: 1px dashed rgba(52, 152, 219, 0.5);
-            border-radius: 4px;
-        }
-
-        /* 손패 랙 고정 영역 */
-        .bottom-hand-panel {
-            background: #111; 
-            padding: 8px 15px calc(8px + env(safe-area-inset-bottom)) 15px; 
-            border-top: 2px solid #333; 
-            flex-shrink: 0; 
-            z-index: 10;
-        }
-        .hand-container { 
-            background: #1e1e1e; border: 2px dashed #444; 
-            min-height: 70px; 
-            max-height: 100px; 
-            overflow-y: auto; 
-            padding: 6px 35px; /* 양옆 사이드에 35px 스크롤 빈 여백 확보 */
-            display: flex; flex-wrap: wrap; gap: 5px; border-radius: 8px; box-sizing: border-box;
+            width: 36px; height: 48px; border: 1px dashed rgba(255,255,255,0.08);
+            border-radius: 4px; display: flex; justify-content: center; align-items: center;
             position: relative;
         }
-        
-        .hand-container.highlight-dest {
-            box-shadow: 0 0 10px #2ecc71; border-color: #2ecc71;
+        .grid-cell.highlight { border-color: #3498db; background: rgba(52, 152, 219, 0.15); }
+
+        /* 하단 손패 고정 영역 */
+        .bottom-hand-bar {
+            background: #1e2124; height: 85px; border-top: 2px solid #2c2f33;
+            padding: 6px 15px calc(6px + env(safe-area-inset-bottom)) 15px;
+            display: flex; align-items: center; gap: 10px; flex-shrink: 0; z-index: 100;
         }
-        
-        /* 타일 칩 스타일 */
+        .hand-scroll-area {
+            flex: 1; height: 60px; background: #2c2f33; border-radius: 6px; border: 1px dashed #4f545c;
+            display: flex; align-items: center; gap: 6px; padding: 0 15px; overflow-x: auto; overflow-y: hidden;
+        }
+        .hand-scroll-area.highlight { border-color: #2ecc71; background: rgba(46, 204, 113, 0.15); }
+
+        /* 타일 스타일 (크기 정규화 적용) */
         .tile { 
-            width: 38px; height: 50px; background: #f5f6fa; border-radius: 4px; display: flex; 
-            justify-content: center; align-items: center; font-size: 16px; font-weight: bold; color: black; 
+            width: 34px; height: 46px; background: #f5f6fa; border-radius: 4px; display: flex; 
+            justify-content: center; align-items: center; font-size: 15px; font-weight: bold; color: black; 
             cursor: grab; position: relative; touch-action: none; user-select: none;
-            box-shadow: 2px 2px 3px rgba(0,0,0,0.5);
-            transition: transform 0.1s, box-shadow 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4); box-sizing: border-box; flex-shrink: 0;
         }
-        .tile.selected {
-            box-shadow: 0 0 12px #2ecc71;
-            border: 2px solid #2ecc71;
-            transform: scale(1.06);
-        }
-        .tile.on-board {
-            position: absolute;
-            margin: 0;
-            z-index: 5;
-        }
+        .tile.selected { box-shadow: 0 0 0 2px #2ecc71; transform: scale(1.05); }
         .red { color: #e74c3c; } .blue { color: #3498db; } .yellow { color: #f39c12; } .black { color: #2c3e50; }
-        .joker { color: #8e44ad; background: #f1f2f6; border: 2px solid #8e44ad; } 
         
-        /* 팝업 모달창 */
+        /* 조커 타일 크기 이탈 버그 수정 (동일 박스 크기 준수) */
+        .joker { color: #8e44ad; background: #f1f2f6; outline: 2px solid #8e44ad; outline-offset: -2px; } 
+
+        /* 팝업 모달창 및 토스트 */
         .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85);
-            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 5000;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8);
+            display: flex; justify-content: center; align-items: center; z-index: 5000;
         }
-        .modal-box { background: #111; padding: 25px; border-radius: 10px; border: 2px solid #444; width: 85%; max-width: 380px; box-sizing: border-box;}
-        .member-list { margin: 15px 0; text-align: left; background: #222; padding: 8px; border-radius: 5px; font-size: 13px;}
+        .modal-box { background: #2f3136; padding: 20px; border-radius: 8px; width: 320px; text-align: center; }
         .form-input {
-            width: 100%; padding: 10px; font-size: 15px; margin: 8px 0; border-radius: 5px; border: 1px solid #444;
-            background: #222; color: white; box-sizing: border-box;
+            width: 100%; padding: 8px; margin: 8px 0; border-radius: 4px; border: 1px solid #4f545c;
+            background: #40444b; color: white; box-sizing: border-box;
         }
-        
-        /* 커스텀 토스트 알림 메시지 */
         .toast-message {
-            position: fixed; 
-            top: 20px; 
-            left: 50%; 
-            transform: translateX(-50%) translateY(calc(-100% - 50px));
-            background: #e74c3c; 
-            color: white; 
-            padding: 12px 20px; 
-            border-radius: 8px; 
-            font-weight: bold;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
-            z-index: 9999; 
-            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            max-width: 90%; 
-            text-align: center;
+            position: fixed; top: 15px; left: 50%; transform: translateX(-50%) translateY(-150%);
+            background: #e74c3c; color: white; padding: 10px 18px; border-radius: 6px; font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 9999; transition: transform 0.3s ease; font-size: 13px;
         }
         .toast-message.show { transform: translateX(-50%) translateY(0); }
     </style>
@@ -164,184 +106,99 @@
 
     <div id="toast" class="toast-message">알림 메시지</div>
 
-    <div id="reconnectModal" class="modal-overlay" style="display: none;">
+    <!-- 로그인 모달 -->
+    <div id="loginModal" class="modal-overlay">
         <div class="modal-box">
-            <h3>⏳ 이전 플레이 감지됨</h3>
-            <p id="reconnectDesc" style="font-size: 14px; color: #bdc3c7; line-height: 1.5;"></p>
-            <button class="green-btn" style="width: 100%; margin-bottom: 8px;" onclick="chooseReconnect(true)">이어하기</button>
-            <button style="width: 100%; background: #c0392b;" onclick="chooseReconnect(false)">새로 접속하기</button>
-        </div>
-    </div>
-
-    <div id="loginModal" class="modal-overlay" style="display: none;">
-        <div class="modal-box">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #2c3e50; padding-bottom: 8px;">
-                <h2 style="font-size: 18px; margin: 0;">🧩 루미큐브 입장하기</h2>
-                <a href="manual.html" target="_blank" style="font-size: 12px; color: #3498db; text-decoration: none; font-weight: bold; background: #2c3e50; padding: 4px 10px; border-radius: 4px; border: 1px solid #3498db; display: inline-flex; align-items: center; gap: 4px;">📖 가이드</a>
-            </div>
-            <label style="font-size: 13px; color: #bdc3c7;">이름 입력 (학급에서 쓰일 실명 권장)</label>
+            <h3 style="margin-top:0;">🧩 루미큐브 Pro 입장</h3>
             <input type="text" id="inputName" class="form-input" placeholder="이름을 입력하세요">
-            
-            <label style="font-size: 13px; color: #bdc3c7;">모둠 번호 입력 (제한 없이 임의개설 가능)</label>
-            <input type="number" id="inputRoom" class="form-input" placeholder="모둠 번호 (예: 1, 12, 104)">
-            
-            <button class="green-btn" style="width: 100%; margin-top: 10px;" onclick="submitLogin()">입장하기</button>
+            <input type="number" id="inputRoom" class="form-input" placeholder="모둠 번호 (숫자)">
+            <button class="green-btn" style="width:100%; margin-top:8px; padding:10px;" onclick="submitLogin()">입장하기</button>
         </div>
     </div>
 
-    <div id="waitingScreen" class="modal-overlay" style="display: none;">
+    <!-- 대기실 모달 -->
+    <div id="waitingScreen" class="modal-overlay" style="display:none;">
         <div class="modal-box">
-            <h2>⏳ <span id="waitRoomTitle"></span> 대기실</h2>
-            <p>모둠원들이 접속할 때까지 기다려주세요.</p>
-            <div class="member-list">
-                <strong>현재 접속자 명단:</strong>
-                <div id="memberListItems" style="margin-top: 5px; color: #3498db;"></div>
-            </div>
-            <button id="startBtn" class="green-btn" style="width: 100%; display: none;" onclick="startGame()">게임 시작하기</button>
-            <p id="masterNotice" style="font-size:12px; color:#bdc3c7; margin-top:10px;">모둠장만 시작할 수 있습니다.</p>
+            <h3>⏳ <span id="waitRoomTitle"></span> 대기실</h3>
+            <div id="memberListItems" style="margin:15px 0; text-align:left; background:#202225; padding:10px; border-radius:4px; font-size:12px;"></div>
+            <button id="startBtn" class="green-btn" style="width:100%; display:none; padding:10px;" onclick="startGame()">게임 시작하기</button>
         </div>
     </div>
 
-    <!-- 헤더 컨트롤 패널 (5.png 구조 매핑) -->
-    <div class="header-panel">
-        <div class="header-left">
-            <h1>🧩 루미큐브 <span id="roomTitle" class="room-tag">대기 중</span></h1>
-            <div id="playerBoard" class="player-status-board"></div>
+    <!-- 상단 일렬 컨트롤 패널 -->
+    <div class="top-navbar">
+        <div class="nav-left">
+            <span class="logo-title">🧩 루미큐브</span>
+            <span id="roomTitle" class="room-badge">1모둠</span>
+            <span id="turnMessage" class="turn-info">접속 중...</span>
         </div>
-        <div id="turnMessage" class="header-center">참가 중...</div>
-        <div class="header-right">
-            <button id="drawBtn" class="green-btn" onclick="socket.emit('drawTile')">타일 1장 뽑기</button>
-            <button onclick="sortHand('number')">숫자 정렬</button>
-            <button onclick="sortHand('color')">색상 정렬</button>
+
+        <div id="playerBoard" class="players-strip"></div>
+
+        <div class="nav-controls">
+            <button id="drawBtn" class="orange-btn" onclick="socket.emit('drawTile')">타일 1장 뽑기</button>
+            <button onclick="sortHand('number')">숫자정렬</button>
+            <button onclick="sortHand('color')">색상정렬</button>
             <button id="endTurnBtn" class="green-btn" onclick="socket.emit('endTurn')">턴 마치기</button>
         </div>
     </div>
 
-    <!-- 공용 보드 박스 구역 (무제한 자유 그리드 배치 형태) -->
-    <div id="boardContainer" class="board-container" ondragover="allowDrop(event)" ondrop="dropOnGridBoard(event)">
-        <div id="boardGridWrapper" class="board-grid-wrapper">
-            <!-- 20x8 크기의 그리드 셀들이 동적으로 깔립니다 -->
-        </div>
+    <!-- 2D 격자 공용 보드판 -->
+    <div class="board-viewport">
+        <div id="gridContainer" class="grid-container"></div>
     </div>
 
-    <!-- 플레이어 손패 박스 구역 (맨바닥 고정) -->
-    <div class="bottom-hand-panel">
-        <div id="hand" class="hand-container" ondragover="allowDrop(event)" ondrop="dropToHand(event)"></div>
+    <!-- 하단 고정 손패 패널 -->
+    <div class="bottom-hand-bar">
+        <div id="hand" class="hand-scroll-area" ondragover="allowDrop(event)" ondrop="dropToHand(event)"></div>
     </div>
 
     <script>
-        const socket = io(); 
-        let myId = null;
-        let localHand = []; 
-        let currentSortType = null;
-        let isMyTurn = false; 
-        
+        const socket = io();
         let userName = null;
         let userRoom = null;
+        let localHand = [];
+        let currentSortType = null;
+        let isMyTurn = false;
+        let selectedTileId = null;
 
-        // 그리드 사양 (20 x 8)
         const GRID_ROWS = 8;
-        const GRID_COLS = 20;
-        const CELL_W = 44;
-        const CELL_H = 56;
-
-        // 클릭-투-무브(Tap to Move) 제어 변수
-        let selectedTileId = null; 
-
-        window.onload = function() {
-            const savedName = sessionStorage.getItem('rummi_name');
-            const savedRoom = sessionStorage.getItem('rummi_room');
-
-            if (savedName && savedRoom) {
-                document.getElementById('reconnectDesc').innerText = `이전 플레이가 끊겼습니다.\n[${savedRoom}모둠 - ${savedName}]님으로 복귀할까요?`;
-                document.getElementById('reconnectModal').style.display = 'flex';
-            } else {
-                document.getElementById('loginModal').style.display = 'flex';
-            }
-            
-            // 2D 가이드 그리드 백그라운드 셀들 생성
-            const gridWrapper = document.getElementById('boardGridWrapper');
-            for (let r = 0; r < GRID_ROWS; r++) {
-                for (let c = 0; c < GRID_COLS; c++) {
-                    const cell = document.createElement('div');
-                    cell.className = 'grid-cell';
-                    cell.style.top = `${r * CELL_H}px`;
-                    cell.style.left = `${c * CELL_W}px`;
-                    cell.dataset.row = r;
-                    cell.dataset.col = c;
-                    
-                    // 빈 공간 클릭해서 탭 무브 타일 안착하기
-                    cell.addEventListener('click', (e) => {
-                        if (selectedTileId && isMyTurn) {
-                            socket.emit('moveTile', { tileId: selectedTileId, toZone: 'board', row: r, col: c });
-                            clearSelection();
-                        }
-                    });
-                    gridWrapper.appendChild(cell);
-                }
-            }
-        };
-
-        function chooseReconnect(agree) {
-            document.getElementById('reconnectModal').style.display = 'none';
-            if (agree) {
-                userName = sessionStorage.getItem('rummi_name');
-                userRoom = sessionStorage.getItem('rummi_room');
-                connectToGame(userName, userRoom);
-            } else {
-                sessionStorage.clear();
-                document.getElementById('loginModal').style.display = 'flex';
-            }
-        }
+        const GRID_COLS = 18;
 
         function submitLogin() {
-            const name = document.getElementById('inputName').value.trim();
-            let room = parseInt(document.getElementById('inputRoom').value.trim());
+            userName = document.getElementById('inputName').value.trim();
+            userRoom = parseInt(document.getElementById('inputRoom').value.trim()) || 1;
 
-            if (!name) {
-                showToast("이름을 입력해 주셔야 합니다.");
-                return;
-            }
-            if (isNaN(room) || room < 1) {
-                room = 1;
-            }
+            if (!userName) { showToast("이름을 입력해 주셔야 합니다."); return; }
 
-            userName = name;
-            userRoom = room;
-
-            sessionStorage.setItem('rummi_name', name);
-            sessionStorage.setItem('rummi_room', room);
+            sessionStorage.setItem('rummi_name', userName);
+            sessionStorage.setItem('rummi_room', userRoom);
             document.getElementById('loginModal').style.display = 'none';
-            connectToGame(name, room);
+
+            document.getElementById('roomTitle').innerText = `${userRoom}모둠`;
+            document.getElementById('waitRoomTitle').innerText = `${userRoom}모둠`;
+            socket.emit('joinGame', { name: userName, roomId: userRoom });
         }
 
-        function connectToGame(name, room) {
-            userName = name;
-            userRoom = room;
-            document.getElementById('roomTitle').innerText = `${room}모둠`;
-            document.getElementById('waitRoomTitle').innerText = `${room}모둠`;
-            socket.emit('joinGame', { name: name, roomId: room });
-        }
-
-        function showToast(message) {
+        function showToast(msg) {
             const toast = document.getElementById('toast');
-            toast.innerText = message;
+            toast.innerText = msg;
             toast.classList.add('show');
-            setTimeout(() => { toast.classList.remove('show'); }, 3500);
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
         }
+
+        function startGame() { socket.emit('gameStart'); }
 
         socket.on('updateGame', (gameState) => {
-            const me = gameState.players.find(p => p.name === userName);
+            const myName = sessionStorage.getItem('rummi_name');
+            const me = gameState.players.find(p => p.name === myName);
             const currentTurnPlayer = gameState.players[gameState.currentTurn];
-            
+
             if (gameState.status === 'waiting') {
                 document.getElementById('waitingScreen').style.display = 'flex';
-                const memberListItems = document.getElementById('memberListItems');
-                memberListItems.innerHTML = gameState.players.map((p, idx) => `${idx+1}. ${p.name}`).join('<br>');
-                
-                if (gameState.players[0] && gameState.players[0].name === userName) {
+                document.getElementById('memberListItems').innerHTML = gameState.players.map((p, i) => `${i+1}. ${p.name}`).join('<br>');
+                if (gameState.players[0] && gameState.players[0].name === myName) {
                     document.getElementById('startBtn').style.display = 'block';
-                    document.getElementById('masterNotice').style.display = 'none';
                 }
                 return;
             } else {
@@ -349,54 +206,93 @@
             }
 
             if (currentTurnPlayer) {
-                if (currentTurnPlayer.name === userName) {
+                if (currentTurnPlayer.name === myName) {
                     isMyTurn = true;
-                    document.getElementById('turnMessage').innerText = "🔴 내 차례입니다! 타일을 드래그하거나 탭해 배치하세요.";
+                    document.getElementById('turnMessage').innerText = "🔴 내 차례입니다!";
                     toggleControls(false);
                 } else {
                     isMyTurn = false;
-                    document.getElementById('turnMessage').innerText = `• ${currentTurnPlayer.name}의 차례 대기 중...`;
+                    document.getElementById('turnMessage').innerText = `• ${currentTurnPlayer.name}의 차례`;
                     toggleControls(true);
                 }
             }
 
+            // 플레이어 리스트 갱신
             const playerBoard = document.getElementById('playerBoard');
             playerBoard.innerHTML = '';
             gameState.players.forEach(p => {
-                const pCard = document.createElement('div');
-                pCard.className = `player-card ${currentTurnPlayer && currentTurnPlayer.name === p.name ? 'active-turn' : ''}`;
-                const meldStatus = p.isMeldDone ? '<span class="meld-tag meld-true">등록됨</span>' : '<span class="meld-tag meld-false">미등록</span>';
-                pCard.innerHTML = `${p.name === userName ? '★나' : p.name}: <span class="tile-count">${p.hand.length}장</span> ${meldStatus}`;
-                playerBoard.appendChild(pCard);
+                const pill = document.createElement('div');
+                pill.className = `p-pill ${currentTurnPlayer && currentTurnPlayer.name === p.name ? 'active' : ''}`;
+                pill.innerText = `${p.name}: ${p.hand.length}장`;
+                playerBoard.appendChild(pill);
             });
 
-            // 보드판 청소 및 렌더링
-            // 기존 보드에 올라가 있던 타일 엘리먼트들만 완전 소거
-            const oldBoardTiles = document.querySelectorAll('.tile.on-board');
-            oldBoardTiles.forEach(t => t.remove());
-
-            // 2D 보드 렌더링
-            const gridWrapper = document.getElementById('boardGridWrapper');
-            gameState.board.forEach(tile => {
-                const tileEl = createTileElement(tile, true);
-                tileEl.style.top = `${tile.row * CELL_H + 3}px`; // 중앙 정렬 보정 패딩
-                tileEl.style.left = `${tile.col * CELL_W + 3}px`;
-                gridWrapper.appendChild(tileEl);
-            });
+            // 2D 격자판 그리기
+            renderGrid(gameState.grid);
 
             if (me) {
                 localHand = me.hand;
-                applySort(); 
+                applySort();
             }
         });
 
-        // 클릭-투-무브 손패 회수 연동
-        document.getElementById('hand').addEventListener('click', (e) => {
+        function renderGrid(gridData) {
+            const container = document.getElementById('gridContainer');
+            container.innerHTML = '';
+
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.addEventListener('dragover', allowDrop);
+                    cell.addEventListener('drop', (e) => dropToGrid(e, r, c));
+
+                    // 클릭-투-무브 배치 연동
+                    cell.addEventListener('click', () => {
+                        if (selectedTileId && isMyTurn) {
+                            socket.emit('moveTile', { tileId: selectedTileId, toZone: 'grid', row: r, col: c });
+                            clearSelection();
+                        }
+                    });
+
+                    if (gridData[r][c]) {
+                        cell.appendChild(createTileElement(gridData[r][c]));
+                    }
+                    container.appendChild(cell);
+                }
+            }
+        }
+
+        // 손패 영역 터치/클릭 시 제출했던 카드 손패로 회수 연동
+        document.getElementById('hand').addEventListener('click', () => {
             if (selectedTileId && isMyTurn) {
                 socket.emit('moveTile', { tileId: selectedTileId, toZone: 'hand' });
                 clearSelection();
             }
         });
+
+        function createTileElement(tile) {
+            const el = document.createElement('div');
+            el.className = `tile ${tile.isJoker ? 'joker' : tile.color}`;
+            el.innerText = tile.isJoker ? '☺' : tile.number;
+            el.id = tile.id;
+
+            if (isMyTurn) {
+                el.draggable = true;
+                el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text', tile.id); });
+                bindTouchEvents(el);
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleTileSelection(tile.id);
+                });
+            } else {
+                el.draggable = false;
+                el.style.opacity = "0.7";
+            }
+            return el;
+        }
 
         function handleTileSelection(tileId) {
             if (selectedTileId === tileId) {
@@ -406,18 +302,16 @@
                 selectedTileId = tileId;
                 const el = document.getElementById(tileId);
                 if (el) el.classList.add('selected');
-                
-                // 하이라이트 가이드라인 켜기
-                document.getElementById('hand').classList.add('highlight-dest');
-                document.querySelectorAll('.grid-cell').forEach(el => el.classList.add('highlight-dest'));
+                document.getElementById('hand').classList.add('highlight');
+                document.querySelectorAll('.grid-cell').forEach(c => c.classList.add('highlight'));
             }
         }
 
         function clearSelection() {
             selectedTileId = null;
             document.querySelectorAll('.tile').forEach(el => el.classList.remove('selected'));
-            document.getElementById('hand').classList.remove('highlight-dest');
-            document.querySelectorAll('.grid-cell').forEach(el => el.classList.remove('highlight-dest'));
+            document.getElementById('hand').classList.remove('highlight');
+            document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('highlight'));
         }
 
         function toggleControls(disable) {
@@ -425,159 +319,92 @@
             document.getElementById('endTurnBtn').disabled = disable;
         }
 
-        function startGame() { socket.emit('gameStart'); }
         function sortHand(type) { currentSortType = type; applySort(); }
 
         function applySort() {
             if (currentSortType === 'number') {
-                localHand.sort((a, b) => {
-                    if (a.isJoker) return 1;
-                    if (b.isJoker) return -1;
-                    return a.number - b.number || a.color.localeCompare(b.color);
-                });
+                localHand.sort((a, b) => (a.isJoker ? 1 : b.isJoker ? -1 : a.number - b.number || a.color.localeCompare(b.color)));
             } else if (currentSortType === 'color') {
-                localHand.sort((a, b) => {
-                    if (a.isJoker) return 1;
-                    if (b.isJoker) return -1;
-                    return a.color.localeCompare(b.color) || a.number - b.number;
-                });
+                localHand.sort((a, b) => (a.isJoker ? 1 : b.isJoker ? -1 : a.color.localeCompare(b.color) || a.number - b.number));
             }
             const handDiv = document.getElementById('hand');
             handDiv.innerHTML = '';
-            localHand.forEach(tile => { handDiv.appendChild(createTileElement(tile, false)); });
+            localHand.forEach(tile => { handDiv.appendChild(createTileElement(tile)); });
         }
 
-        function createTileElement(tile, isOnBoard) {
-            const el = document.createElement('div');
-            el.className = `tile ${tile.isJoker ? 'joker' : tile.color}`;
-            el.innerText = tile.isJoker ? '☺' : tile.number;
-            el.id = tile.id;
-            if (isOnBoard) {
-                el.classList.add('on-board');
-            }
-            
-            if (isMyTurn) {
-                el.draggable = true;
-                el.style.opacity = "1";
-                el.style.cursor = "grab";
-                el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text', tile.id); });
-                bindTouchEvents(el);
-                
-                // 마우스 클릭 시 선택/해제 핸들러
-                el.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    handleTileSelection(tile.id);
-                });
-            } else {
-                el.draggable = false;
-                el.style.opacity = "0.7";
-                el.style.cursor = "not-allowed";
-            }
-            return el;
-        }
+        function allowDrop(e) { if (isMyTurn) e.preventDefault(); }
 
-        function allowDrop(e) { if(isMyTurn) e.preventDefault(); }
-
-        // 드롭이 격자판 보드 위로 떨어졌을 때 좌표를 역추적해 안착
-        function dropOnGridBoard(e) {
-            e.preventDefault();
-            if(!isMyTurn) return;
+        function dropToGrid(e, row, col) {
+            e.preventDefault(); e.stopPropagation();
+            if (!isMyTurn) return;
             const tileId = e.dataTransfer.getData('text');
-            
-            const boardContainer = document.getElementById('boardContainer');
-            const rect = boardContainer.getBoundingClientRect();
-            
-            // 스크롤된 거리를 더해 보드의 절대 내부 좌표(X, Y) 획득
-            const x = e.clientX - rect.left + boardContainer.scrollLeft - 10;
-            const y = e.clientY - rect.top + boardContainer.scrollTop - 10;
-            
-            let col = Math.floor(x / CELL_W);
-            let row = Math.floor(y / CELL_H);
-            
-            if (col < 0) col = 0; if (col >= GRID_COLS) col = GRID_COLS - 1;
-            if (row < 0) row = 0; if (row >= GRID_ROWS) row = GRID_ROWS - 1;
-            
-            socket.emit('moveTile', { tileId, toZone: 'board', row, col });
+            socket.emit('moveTile', { tileId, toZone: 'grid', row, col });
         }
 
         function dropToHand(e) {
             e.preventDefault();
-            if(!isMyTurn) return;
+            if (!isMyTurn) return;
             const tileId = e.dataTransfer.getData('text');
             socket.emit('moveTile', { tileId, toZone: 'hand' });
         }
 
         function bindTouchEvents(tileEl) {
-            let startX, startY;
-            let hasMoved = false;
+            let startX, startY, hasMoved = false;
 
-            tileEl.addEventListener('touchstart', function(e) {
-                if(!isMyTurn) return;
+            tileEl.addEventListener('touchstart', (e) => {
+                if (!isMyTurn) return;
                 const touch = e.touches[0];
-                startX = touch.clientX; 
-                startY = touch.clientY;
+                startX = touch.clientX; startY = touch.clientY;
                 hasMoved = false;
-                tileEl.style.zIndex = 1000;
             }, { passive: true });
 
-            tileEl.addEventListener('touchmove', function(e) {
-                if(!isMyTurn) return;
+            tileEl.addEventListener('touchmove', (e) => {
+                if (!isMyTurn) return;
                 const touch = e.touches[0];
-                const dx = touch.clientX - startX;
-                const dy = touch.clientY - startY;
-
+                const dx = touch.clientX - startX; const dy = touch.clientY - startY;
                 if (Math.hypot(dx, dy) > 6) {
                     hasMoved = true;
-                    if (e.cancelable) e.preventDefault(); 
+                    if (e.cancelable) e.preventDefault();
                 }
                 tileEl.style.transform = `translate(${dx}px, ${dy}px)`;
             }, { passive: false });
 
-            tileEl.addEventListener('touchend', function(e) {
-                if(!isMyTurn) return;
+            tileEl.addEventListener('touchend', (e) => {
+                if (!isMyTurn) return;
                 const touch = e.changedTouches[0];
-                tileEl.style.zIndex = ''; 
                 tileEl.style.transform = '';
 
-                // 순수 가벼운 터치 탭
                 if (!hasMoved) {
                     e.preventDefault();
                     handleTileSelection(tileEl.id);
                     return;
                 }
 
-                // 모바일 터치 드롭 좌표 계산
-                const x = touch.clientX; 
-                const y = touch.clientY;
+                const x = touch.clientX; const y = touch.clientY;
 
-                const handEl = document.getElementById('hand');
-                const handRect = handEl.getBoundingClientRect();
+                // 손패 영역으로 드래그 시 회수
+                const handRect = document.getElementById('hand').getBoundingClientRect();
                 if (x >= handRect.left && x <= handRect.right && y >= handRect.top && y <= handRect.bottom) {
                     socket.emit('moveTile', { tileId: tileEl.id, toZone: 'hand' });
                     return;
                 }
 
-                const boardContainer = document.getElementById('boardContainer');
-                const rect = boardContainer.getBoundingClientRect();
-                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                    const absX = x - rect.left + boardContainer.scrollLeft - 10;
-                    const absY = y - rect.top + boardContainer.scrollTop - 10;
-                    
-                    let col = Math.floor(absX / CELL_W);
-                    let row = Math.floor(absY / CELL_H);
-                    
-                    if (col < 0) col = 0; if (col >= GRID_COLS) col = GRID_COLS - 1;
-                    if (row < 0) row = 0; if (row >= GRID_ROWS) row = GRID_ROWS - 1;
-                    
-                    socket.emit('moveTile', { tileId: tileEl.id, toZone: 'board', row, col });
+                // 격자 셀 드롭
+                const cells = document.querySelectorAll('.grid-cell');
+                for (let cell of cells) {
+                    const rect = cell.getBoundingClientRect();
+                    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                        socket.emit('moveTile', { tileId: tileEl.id, toZone: 'grid', row: parseInt(cell.dataset.row), col: parseInt(cell.dataset.col) });
+                        break;
+                    }
                 }
             });
         }
-        
+
         socket.on('errorMsg', (msg) => { showToast(msg); });
-        socket.on('victory', (winner) => { 
-            showToast(`🎉 축하합니다! [${winner}] 학생이 손패를 모두 털어 최종 승리했습니다!`); 
-            sessionStorage.clear(); 
+        socket.on('victory', (winner) => {
+            showToast(`🎉 축하합니다! [${winner}] 학생 승리!`);
+            sessionStorage.clear();
             setTimeout(() => { window.location.reload(); }, 4000);
         });
     </script>

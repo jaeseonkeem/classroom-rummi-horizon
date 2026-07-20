@@ -8,6 +8,8 @@ app.use(express.static(path.join(__dirname)));
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
 let rooms = {};
+const GRID_ROWS = 8;
+const GRID_COLS = 18;
 
 function initDeck() {
     const colors = ['red', 'blue', 'yellow', 'black'];
@@ -25,51 +27,69 @@ function initDeck() {
 }
 
 function createNewRoomState() {
+    let emptyGrid = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
     return {
         players: [],
-        board: [], // [[id, color, number, isJoker, row, col], ...] 구조의 좌표계 보드 관리
+        grid: emptyGrid,
         tilePool: initDeck(),
         currentTurn: 0,
         status: 'waiting',
-        backupBoard: null
+        backupGrid: null
     };
 }
 
-// [격자판 전용] 가로로 밀착해 인접한 타일들을 하나의 세트(Group/Run)로 묶어주는 스캔 알고리즘
-function getBoardGroups(boardTiles) {
-    let rows = {};
-    boardTiles.forEach(t => {
-        if (!rows[t.row]) rows[t.row] = [];
-        rows[t.row].push(t);
-    });
-    
+// 2D 격자판에서 가로/세로로 연속 연결된 타일 묶음(세트)들을 추출하는 스마트 알고리즘
+function parseGroupsFromGrid(grid) {
     let groups = [];
-    Object.keys(rows).forEach(r => {
-        let rowTiles = rows[r];
-        rowTiles.sort((a, b) => a.col - b.col); // 왼쪽 칼럼부터 순서대로 정렬
-        
-        if (rowTiles.length === 0) return;
-        
-        let currentGroup = [rowTiles[0]];
-        for (let i = 1; i < rowTiles.length; i++) {
-            // 칼럼 번호가 정확히 1 차이로 연속해서 붙어 있다면 같은 세트로 인지
-            if (rowTiles[i].col === rowTiles[i-1].col + 1) {
-                currentGroup.push(rowTiles[i]);
+
+    // 가로 줄 검사
+    for (let r = 0; r < GRID_ROWS; r++) {
+        let currentGroup = [];
+        for (let c = 0; c < GRID_COLS; c++) {
+            let cell = grid[r][c];
+            if (cell) {
+                currentGroup.push(cell);
             } else {
-                groups.push(currentGroup);
-                currentGroup = [rowTiles[i]];
+                if (currentGroup.length > 0) {
+                    groups.push(currentGroup);
+                    currentGroup = [];
+                }
             }
         }
-        groups.push(currentGroup);
-    });
+        if (currentGroup.length > 0) {
+            groups.push(currentGroup);
+        }
+    }
+
+    // 세로 줄 검사
+    for (let c = 0; c < GRID_COLS; c++) {
+        let currentGroup = [];
+        for (let r = 0; r < GRID_ROWS; r++) {
+            let cell = grid[r][c];
+            if (cell) {
+                currentGroup.push(cell);
+            } else {
+                if (currentGroup.length > 0) {
+                    groups.push(currentGroup);
+                    currentGroup = [];
+                }
+            }
+        }
+        if (currentGroup.length > 0) {
+            groups.push(currentGroup);
+        }
+    }
+
+    // 1장짜리 독립 타일은 세트 검증에서 제외 (단, 2장 이하 단독 존재 시 전체 보드 유효성 실패 처리)
     return groups;
 }
 
-function isBoardValid(boardTiles) {
-    const boardGroups = getBoardGroups(boardTiles);
-    if (boardGroups.length === 0) return true;
+function isBoardValid(grid) {
+    let groups = parseGroupsFromGrid(grid);
+    if (groups.length === 0) return true;
 
-    for (let group of boardGroups) {
+    for (let group of groups) {
+        if (group.length < 3) return false; // 3장 미만 그룹은 무조건 실패
         if (!validateGroup(group) && !validateRun(group)) return false;
     }
     return true;
@@ -101,11 +121,15 @@ function validateRun(tiles) {
 function checkRunWithJokers(arr) {
     let jokersCount = arr.filter(v => v === 'J').length;
     let nums = arr.filter(v => v !== 'J').sort((a, b) => a - b);
-    for(let i=0; i<nums.length-1; i++) {
+    
+    // 연속 숫자에 중복값이 있으면 안됨
+    for(let i = 0; i < nums.length - 1; i++) {
         if(nums[i] === nums[i+1]) return false;
     }
+    
     let diff = nums[nums.length - 1] - nums[0];
     let neededJokers = diff - (nums.length - 1);
+    
     if (neededJokers <= jokersCount) {
         let totalLength = nums.length + jokersCount;
         if (totalLength <= 13) return true;
@@ -128,13 +152,11 @@ io.on('connection', (socket) => {
         socket.join(roomName);
 
         let existingPlayer = gameState.players.find(p => p.name === name);
-
         if (existingPlayer) {
             existingPlayer.id = socket.id;
-            console.log(`[재접속] ${name} -> Room: ${roomId}`);
         } else {
             if (gameState.status === 'playing' || gameState.players.length >= 4) {
-                socket.emit('errorMsg', '게임이 시작되었거나 가득 찬 모둠입니다.');
+                socket.emit('errorMsg', '방에 입장할 수 없습니다.');
                 return;
             }
             gameState.players.push({ id: socket.id, name: name, hand: [], isMeldDone: false, turnSubmittedTiles: [] });
@@ -151,8 +173,8 @@ io.on('connection', (socket) => {
         if (gameState.status === 'waiting') {
             gameState.status = 'playing';
             gameState.tilePool = initDeck();
-            gameState.board = [];
-            gameState.backupBoard = JSON.stringify(gameState.board);
+            gameState.grid = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
+            gameState.backupGrid = JSON.stringify(gameState.grid);
 
             gameState.players.forEach(player => {
                 player.hand = [];
@@ -172,13 +194,16 @@ io.on('connection', (socket) => {
         let currentPlayer = gameState.players[gameState.currentTurn];
         if (!currentPlayer || currentPlayer.id !== socket.id) return;
 
+        if (gameState.backupGrid) gameState.grid = JSON.parse(gameState.backupGrid);
         if (currentPlayer.turnSubmittedTiles.length > 0) {
-            socket.emit('errorMsg', '이미 보드에 타일을 제출하셨으므로 패를 새로 뽑을 수 없습니다. 낸 타일을 모두 회수해야 패를 가져갈 수 있습니다.');
-            return;
+            currentPlayer.turnSubmittedTiles.forEach(tile => {
+                if(!currentPlayer.hand.some(t => t.id === tile.id)) currentPlayer.hand.push(tile);
+            });
+            currentPlayer.turnSubmittedTiles = [];
         }
 
         if (gameState.tilePool.length > 0) currentPlayer.hand.push(gameState.tilePool.pop());
-        gameState.backupBoard = JSON.stringify(gameState.board);
+        gameState.backupGrid = JSON.stringify(gameState.grid);
         gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
         io.to(myRoom).emit('updateGame', gameState);
     });
@@ -192,55 +217,33 @@ io.on('connection', (socket) => {
         let targetTile = null;
         let isComingFromHand = false;
 
+        // 1. 손패에서 꺼내는 경우
         let handIdx = currentPlayer.hand.findIndex(t => t.id === tileId);
         if (handIdx !== -1) {
             targetTile = currentPlayer.hand.splice(handIdx, 1)[0];
             isComingFromHand = true;
         } else {
-            let boardIdx = gameState.board.findIndex(t => t.id === tileId);
-            if (boardIdx !== -1) {
-                targetTile = gameState.board.splice(boardIdx, 1)[0];
+            // 2. 격자판 내부에서 타일을 이동시키는 경우
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    if (gameState.grid[r][c] && gameState.grid[r][c].id === tileId) {
+                        targetTile = gameState.grid[r][c];
+                        gameState.grid[r][c] = null; // 기존 위치 비우기
+                        break;
+                    }
+                }
             }
         }
 
         if (!targetTile) return;
 
-        // 보드에 미리 놓여있던 타일은 내 손패로 가져갈 수 없음 가드 규칙
-        if (!isComingFromHand && toZone === 'hand') {
-            let submittedIdx = currentPlayer.turnSubmittedTiles.findIndex(t => t.id === tileId);
-            if (submittedIdx === -1) {
-                socket.emit('errorMsg', '보드에 원래 있던 타일은 손패로 회수할 수 없습니다!');
-                // 원위치 롤백
-                gameState.board.push(targetTile);
-                io.to(myRoom).emit('updateGame', gameState);
-                return;
-            }
-        }
-
         if (toZone === 'hand') {
             let sIdx = currentPlayer.turnSubmittedTiles.findIndex(t => t.id === tileId);
             if (sIdx !== -1) currentPlayer.turnSubmittedTiles.splice(sIdx, 1);
-            delete targetTile.row;
-            delete targetTile.col;
             currentPlayer.hand.push(targetTile);
-        } else if (toZone === 'board') {
-            if (isComingFromHand) {
-                currentPlayer.turnSubmittedTiles.push(targetTile);
-            }
-            
-            // 대상 셀에 이미 다른 타일이 있는 경우 옆 빈 칸으로 밀어내는 오버랩 가드
-            let occupantIdx = gameState.board.findIndex(t => t.row === row && t.col === col && t.id !== tileId);
-            if (occupantIdx !== -1) {
-                let targetCol = col;
-                while (gameState.board.some(t => t.row === row && t.col === targetCol)) {
-                    targetCol++;
-                }
-                gameState.board[occupantIdx].col = targetCol;
-            }
-
-            targetTile.row = row;
-            targetTile.col = col;
-            gameState.board.push(targetTile);
+        } else if (toZone === 'grid') {
+            if (isComingFromHand) currentPlayer.turnSubmittedTiles.push(targetTile);
+            gameState.grid[row][col] = targetTile;
         }
 
         io.to(myRoom).emit('updateGame', gameState);
@@ -253,19 +256,15 @@ io.on('connection', (socket) => {
         if (!currentPlayer || currentPlayer.id !== socket.id) return;
 
         if (currentPlayer.turnSubmittedTiles.length === 0) {
-            socket.emit('errorMsg', '타일을 한 장도 내지 않았다면 [타일 1장 뽑기]로 턴을 종료해야 합니다.');
+            socket.emit('errorMsg', '타일을 내지 않았다면 [타일 1장 뽑기]를 이용해 주세요.');
             return;
         }
 
-        if (!isBoardValid(gameState.board)) {
-            socket.emit('errorMsg', '❌ 보드 위에 완성되지 않은 조합 세트가 존재합니다! 이번 차례 행동이 강제 회수됩니다.');
-            gameState.board = JSON.parse(gameState.backupBoard);
+        if (!isBoardValid(gameState.grid)) {
+            socket.emit('errorMsg', '❌ 규칙에 맞지 않는 세트(2장 이하이거나 조합 오류)가 존재합니다! 행동이 롤백됩니다.');
+            gameState.grid = JSON.parse(gameState.backupGrid);
             currentPlayer.turnSubmittedTiles.forEach(tile => {
-                if(!currentPlayer.hand.some(t => t.id === tile.id)) {
-                    delete tile.row;
-                    delete tile.col;
-                    currentPlayer.hand.push(tile);
-                }
+                if(!currentPlayer.hand.some(t => t.id === tile.id)) currentPlayer.hand.push(tile);
             });
             currentPlayer.turnSubmittedTiles = [];
             io.to(myRoom).emit('updateGame', gameState);
@@ -276,14 +275,10 @@ io.on('connection', (socket) => {
             let scoreSum = 0;
             currentPlayer.turnSubmittedTiles.forEach(t => { scoreSum += t.isJoker ? 10 : t.number; });
             if (scoreSum < 30) {
-                socket.emit('errorMsg', `첫 등록은 바닥에 낸 타일 숫자의 총합이 30점 이상이어야 합니다. (현재 제출 점수: ${scoreSum}점)`);
-                gameState.board = JSON.parse(gameState.backupBoard);
+                socket.emit('errorMsg', `첫 등록의 총합이 30점 미만입니다. (${scoreSum}점)`);
+                gameState.grid = JSON.parse(gameState.backupGrid);
                 currentPlayer.turnSubmittedTiles.forEach(tile => {
-                    if(!currentPlayer.hand.some(t => t.id === tile.id)) {
-                        delete tile.row;
-                        delete tile.col;
-                        currentPlayer.hand.push(tile);
-                    }
+                    if(!currentPlayer.hand.some(t => t.id === tile.id)) currentPlayer.hand.push(tile);
                 });
                 currentPlayer.turnSubmittedTiles = [];
                 io.to(myRoom).emit('updateGame', gameState);
@@ -293,7 +288,7 @@ io.on('connection', (socket) => {
             }
         }
 
-        gameState.backupBoard = JSON.stringify(gameState.board);
+        gameState.backupGrid = JSON.stringify(gameState.grid);
         currentPlayer.turnSubmittedTiles = [];
         
         if (currentPlayer.hand.length === 0) {
@@ -309,7 +304,6 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         if (myRoom && rooms[myRoom]) {
-            let gameState = rooms[myRoom];
             let activeConnections = io.sockets.adapter.rooms.get(myRoom);
             if (!activeConnections || activeConnections.size === 0) {
                 delete rooms[myRoom];
